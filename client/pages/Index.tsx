@@ -9,8 +9,20 @@ import {
 import Header from "@/components/Header";
 import { Heart, MapPin, Bell, Shield, Users, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { auth, db } from "@/firebase/firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
+import { getCompatibleRecipients } from "@/lib/bloodCompatibility";
 
 export default function Index() {
+  //
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+  //
   return (
     <div className="min-h-screen bg-background">
       <Header />

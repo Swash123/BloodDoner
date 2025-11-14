@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import Header from "@/components/Header";
 import {
   Card,
@@ -30,12 +31,18 @@ import {
   CheckCircle,
   Search
 } from "lucide-react";
+import { Link ,useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/firebase/firebaseConfig";
+import { createBloodRequest } from "@/lib/bloodRequest.ts";
+import { searchDonnerforRequest } from "@/lib/users.ts";
 
 interface FormData {
   patientName: string;
   bloodType: string;
-  unitsNeeded: string;
-  urgency: string;
+  unitsNeeded: number;
+  urgency: number;
   hospital: string;
   contactPerson: string;
   phoneNumber: string;
@@ -47,10 +54,10 @@ interface FormData {
 
 const bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const urgencyLevels = [
-  { value: "critical", label: "Critical (within 2 hours)", color: "bg-red-500" },
-  { value: "urgent", label: "Urgent (within 6 hours)", color: "bg-orange-500" },
-  { value: "moderate", label: "Moderate (within 24 hours)", color: "bg-yellow-500" },
-  { value: "routine", label: "Routine (within 3 days)", color: "bg-green-500" }
+  { value: 1, label: "Critical (within 2 hours)", color: "bg-red-500" },
+  { value: 2, label: "Urgent (within 6 hours)", color: "bg-orange-500" },
+  { value: 3, label: "Moderate (within 24 hours)", color: "bg-yellow-500" },
+  { value: 4, label: "Routine (within 3 days)", color: "bg-green-500" }
 ];
 
 const mockDonors = [
@@ -61,11 +68,16 @@ const mockDonors = [
 ];
 
 export default function BloodRequest() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [bloodRequest, setBloodRequest] = useState<any>(null);
+  const [donorsFound,setDonorsFound] = useState <any>(null);
   const [formData, setFormData] = useState<FormData>({
     patientName: "",
     bloodType: "",
-    unitsNeeded: "",
-    urgency: "",
+    unitsNeeded: 0,
+    urgency: 0,
     hospital: "",
     contactPerson: "",
     phoneNumber: "",
@@ -76,12 +88,37 @@ export default function BloodRequest() {
   });
 
   const [currentStep, setCurrentStep] = useState(1);
-  const [showDonors, setShowDonors] = useState(false);
+  const [showDonors, setShowDonors] = useState(!!id);
   const totalSteps = 3;
   const progress = (currentStep / totalSteps) * 100;
+  useEffect(() => {
+    setShowDonors(!!id);
+    if (!id) return; 
+    const fetchRequest = async () => {
+      try {
+        const requestDocRef = doc(db, "bloodRequests", id);
+        const requestDocSnap = await getDoc(requestDocRef);
+
+        if (requestDocSnap.exists()) {
+          const requestData = requestDocSnap.data();
+          setBloodRequest(requestData);
+          const donors=await searchDonnerforRequest(requestData.bloodType);
+          setDonorsFound(donors);
+          console.log(donorsFound);
+          
+        } else {
+          console.error("No such request!");
+        }
+      } catch (error) {
+        console.error("Error fetching request:", error);
+      }
+    };
+
+    fetchRequest();
+  }, [id]);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => ({ ...prev, [field]: field === "urgency" || field === "unitsNeeded" ? Number(value) : value, }));
   };
 
   const nextStep = () => {
@@ -92,13 +129,21 @@ export default function BloodRequest() {
     if (currentStep > 1) setCurrentStep(currentStep - 1);
   };
 
-  const submitRequest = () => {
-    setShowDonors(true);
+  const submitRequest = async () => {
     // Here you would typically submit to your backend
     console.log("Submitting blood request:", formData);
+    const request= await createBloodRequest(formData);
+    if(request.success){
+      toast.success(request.message);
+      navigate(`/request/${request.id}`);
+      
+      // setShowDonors(true);
+    }else{
+      toast.error("Request submission failed");
+    }
   };
 
-  const getUrgencyColor = (urgency: string) => {
+  const getUrgencyColor = (urgency: number) => {
     const level = urgencyLevels.find(l => l.value === urgency);
     return level?.color || "bg-gray-500";
   };
@@ -127,7 +172,7 @@ export default function BloodRequest() {
             </div>
             <h1 className="text-3xl font-bold text-brand-gray">Request Submitted Successfully!</h1>
             <p className="text-muted-foreground mt-2">
-              We've found {mockDonors.length} potential donors in your area
+              We've found {donorsFound?donorsFound.length:0} potential donors in your area
             </p>
           </div>
 
@@ -140,27 +185,35 @@ export default function BloodRequest() {
               <CardContent className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Patient:</span>
-                  <span className="font-medium">{formData.patientName}</span>
+                  <span className="font-medium">{bloodRequest?bloodRequest.patientName: ""}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Blood Type:</span>
                   <Badge variant="outline" className="text-primary border-primary">
-                    {formData.bloodType}
+                    {bloodRequest?bloodRequest.bloodType: ""}
                   </Badge>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Units Needed:</span>
-                  <span className="font-medium">{formData.unitsNeeded} units</span>
+                  <span className="font-medium">{bloodRequest?bloodRequest.unitsNeeded : ""} units</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Urgency:</span>
-                  <Badge className={getUrgencyColor(formData.urgency)}>
-                    {urgencyLevels.find(l => l.value === formData.urgency)?.label.split('(')[0]}
+                  <Badge className={bloodRequest?getUrgencyColor(bloodRequest.urgency): "bg-gray-500"}>
+                    {bloodRequest?urgencyLevels.find(l => l.value === bloodRequest.urgency)?.label.split('(')[0].trim() : ""}
                   </Badge>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Hospital:</span>
-                  <span className="font-medium">{formData.hospital}</span>
+                  <span className="font-medium">{bloodRequest?bloodRequest.hospital : ""}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Location:</span>
+                  <span className="font-medium">{bloodRequest?bloodRequest.location : ""}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Status:</span>
+                  <span className="font-medium">{bloodRequest?bloodRequest.status.toUpperCase(): ""}</span>
                 </div>
               </CardContent>
             </Card>
@@ -177,32 +230,41 @@ export default function BloodRequest() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {mockDonors.map((donor) => (
-                  <div key={donor.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{donor.name}</span>
-                        {donor.verified && (
+                {donorsFound&&donorsFound.length>0 ?( 
+                  donorsFound.map((donor) => (
+                    <div key={donor.uid} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{donor.firstName+" "+donor.lastName}</span>
+                          
                           <CheckCircle className="h-4 w-4 text-green-500" />
-                        )}
+                          
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+                          <Badge variant="outline" className="text-primary border-primary">
+                            {donor.bloodType || ""}
+                          </Badge>
+                          <span className="flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {donor.address}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {donor.lastDonation || "No donation history"}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {donor.distance} away
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {donor.lastDonation}
-                        </span>
-                      </div>
+                      <Button size="sm">
+                        <Phone className="h-4 w-4 mr-1" />
+                        Contact
+                      </Button>
                     </div>
-                    <Button size="sm">
-                      <Phone className="h-4 w-4 mr-1" />
-                      Contact
-                    </Button>
-                  </div>
-                ))}
+                  ))
+                ):(
+                  <p className="text-center text-muted-foreground mt-4">
+                    No donor available at the moment.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -211,7 +273,7 @@ export default function BloodRequest() {
             <p className="text-muted-foreground mb-4">
               You'll receive notifications as donors respond to your request
             </p>
-            <Button variant="outline" onClick={() => setShowDonors(false)}>
+            <Button variant="outline" onClick={() => {setShowDonors(false); navigate("/request");}}>
               Submit Another Request
             </Button>
           </div>
@@ -317,7 +379,7 @@ export default function BloodRequest() {
                       </SelectTrigger>
                       <SelectContent>
                         {urgencyLevels.map((level) => (
-                          <SelectItem key={level.value} value={level.value}>
+                          <SelectItem key={level.value} value={level.value.toString()}>
                             <div className="flex items-center gap-2">
                               <div className={`w-3 h-3 rounded-full ${level.color}`} />
                               {level.label}

@@ -9,14 +9,16 @@ import {
   Heart,
   Phone
 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { Link } from "react-router-dom";
+import { getUrgencyHeader } from "@/lib/bloodRequest.ts"
 
 const mockEmergencyRequests = [
   {
     id: "emr-001",
     bloodType: "O-",
     location: "Teaching Hospital, Kathmandu",
-    urgency: "critical",
+    urgency: 1,
     timePosted: "15 minutes ago",
     unitsNeeded: 2,
     hospital: "Tribhuvan University Teaching Hospital",
@@ -26,7 +28,18 @@ const mockEmergencyRequests = [
     id: "emr-002", 
     bloodType: "AB+",
     location: "Patan Hospital, Lalitpur",
-    urgency: "urgent",
+    urgency: 3,
+    timePosted: "32 minutes ago",
+    unitsNeeded: 1,
+    hospital: "Patan Academy of Health Sciences",
+    contactNumber: "+977 1-5522-266"
+  }
+  ,
+  {
+    id: "emr-002", 
+    bloodType: "AB+",
+    location: "Patan Hospital, Lalitpur",
+    urgency: 4,
     timePosted: "32 minutes ago",
     unitsNeeded: 1,
     hospital: "Patan Academy of Health Sciences",
@@ -37,11 +50,29 @@ const mockEmergencyRequests = [
 export default function EmergencyAlert() {
   const [isVisible, setIsVisible] = useState(true);
   const [currentRequestIndex, setCurrentRequestIndex] = useState(0);
-  const [emergencyRequests] = useState(mockEmergencyRequests);
+  const [emergencyRequests, setEmergencyRequests] = useState([]);
+  useEffect(() => {
+    const fetchUrgencyData = async () => {
+      try {
+        const data = await getUrgencyHeader(); // Assume this function fetches the data
+        setEmergencyRequests(data); // Store the result in the state
+      } catch (error) {
+        console.error("Error fetching urgency data:", error);
+      }
+    };
+
+    fetchUrgencyData();
+  }, []);
+  const handleDotClick = (index) => {
+    console.log("Clicked on dot", index);
+    if (index !== currentRequestIndex) {
+      setCurrentRequestIndex(index);
+    }
+  };
 
   // Rotate between emergency requests every 8 seconds
   useEffect(() => {
-    if (emergencyRequests.length > 1) {
+    if (emergencyRequests.length > 0) {
       const interval = setInterval(() => {
         setCurrentRequestIndex((prev) => (prev + 1) % emergencyRequests.length);
       }, 8000);
@@ -52,23 +83,23 @@ export default function EmergencyAlert() {
   // Auto-hide after 30 seconds unless user interacts
   useEffect(() => {
     const timer = setTimeout(() => {
-      setIsVisible(false);
+      setIsVisible(prev => !prev);
     }, 30000);
     return () => clearTimeout(timer);
   }, []);
-
+  
   if (!isVisible || emergencyRequests.length === 0) return null;
 
   const currentRequest = emergencyRequests[currentRequestIndex];
-  const urgencyColor = currentRequest.urgency === "critical" ? "bg-red-500" : "bg-orange-500";
-  const urgencyTextColor = currentRequest.urgency === "critical" ? "text-red-700" : "text-orange-700";
-  const urgencyBgColor = currentRequest.urgency === "critical" ? "bg-red-50" : "bg-orange-50";
-  const urgencyBorderColor = currentRequest.urgency === "critical" ? "border-red-200" : "border-orange-200";
+  const urgencyColor = currentRequest.urgency === 1 ? "bg-red-500" : currentRequest.urgency === 2 ? "bg-orange-500" : currentRequest.urgency === 3 ? "bg-yellow-500" : "bg-green-500";
+  const urgencyTextColor = currentRequest.urgency === 1 ? "text-red-700" : currentRequest.urgency === 2 ? "text-orange-700" : currentRequest.urgency === 3 ? "text-yellow-700" : "text-green-700";
+  const urgencyBgColor = currentRequest.urgency === 1 ? "bg-red-50" : currentRequest.urgency === 2 ? "bg-orange-50" : currentRequest.urgency === 3 ? "bg-yellow-50" : "bg-green-50";
+  const urgencyBorderColor = currentRequest.urgency === 1 ? "border-red-200" : currentRequest.urgency === 2 ? "border-orange-200" : currentRequest.urgency === 3 ? "border-yellow-200" : "border-green-200";
 
   return (
     <div className={`relative ${urgencyBgColor} ${urgencyBorderColor} border-b-2 shadow-sm`}>
       {/* Animated pulse for critical alerts */}
-      {currentRequest.urgency === "critical" && (
+      {currentRequest.urgency === 1 && (
         <div className="absolute inset-0 bg-red-500 opacity-10 animate-pulse"></div>
       )}
       
@@ -82,7 +113,7 @@ export default function EmergencyAlert() {
               <div>
                 <div className="flex items-center space-x-2">
                   <Badge className={urgencyColor}>
-                    {currentRequest.urgency === "critical" ? "CRITICAL" : "URGENT"}
+                    {currentRequest.urgency === 1 ? "CRITICAL" : currentRequest.urgency === 2 ? "URGENT":currentRequest.urgency === 3 ? "MODERATE":"ROUTINE"}
                   </Badge>
                   <span className={`text-sm font-medium ${urgencyTextColor}`}>
                     Blood Needed Now
@@ -109,7 +140,7 @@ export default function EmergencyAlert() {
               
               <div className="flex items-center space-x-1">
                 <Clock className={`h-4 w-4 ${urgencyTextColor}`} />
-                <span className="text-gray-600">{currentRequest.timePosted}</span>
+                <span className="text-gray-600">{formatDistanceToNow(currentRequest.createdAt.toDate(), { addSuffix: true })}</span>
               </div>
             </div>
           </div>
@@ -184,6 +215,7 @@ export default function EmergencyAlert() {
               {emergencyRequests.map((_, index) => (
                 <div
                   key={index}
+                  onClick={() => handleDotClick(index)}
                   className={`w-2 h-2 rounded-full transition-all duration-300 ${
                     index === currentRequestIndex ? urgencyColor : 'bg-gray-300'
                   }`}

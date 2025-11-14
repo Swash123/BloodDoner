@@ -1,11 +1,47 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Menu, X, Heart } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Menu, X, Heart, User, LogOut, LayoutDashboard } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import EmergencyAlert from "./EmergencyAlert";
-
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "@/firebase/firebaseConfig";
+import { doc, getDoc } from "firebase/firestore";
 export default function Header() {
+  const [user, setUser] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isProfileDropdown, setIsProfileDropdown] = useState(false);
+  const navigate = useNavigate();
+  const handleLogout= ()=>{
+    setIsProfileDropdown(!isProfileDropdown);
+  }
+  useEffect(() => {
+    // Check if the user is logged in
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      try {
+        const userDocRef = doc(db, "users", currentUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          console.log(userData);
+          
+
+          if (userData.role !== "donor") {
+            navigate("/login");
+            return;
+          }
+
+          const thisUser = { uid: currentUser.uid, ...userData };
+          setUser(thisUser);
+        }
+      }catch(err){
+        console.log(err);
+      }
+    });
+    return () => unsubscribe(); // Clean up on unmount
+  }, []);
+
 
   return (
     <>
@@ -53,12 +89,46 @@ export default function Header() {
 
             {/* Desktop Auth Buttons */}
             <div className="hidden md:flex items-center space-x-4">
-              <Button variant="ghost" asChild>
-                <Link to="/login">Login</Link>
-              </Button>
-              <Button asChild>
-                <Link to="/register">Get Started</Link>
-              </Button>
+              {!user ? (
+                <>
+                  <Button variant="ghost" asChild>
+                    <Link to="/login">Login</Link>
+                  </Button>
+                  <Button asChild>
+                    <Link to="/register">Get Started</Link>
+                  </Button>
+                </>
+              ) : (
+                <div className="relative flex items-center space-x-3">
+                  {/* Profile Picture or Default Icon */}
+                  <button onClick={() => setIsProfileDropdown(!isProfileDropdown)} className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                      <User className="w-6 h-6 text-gray-600" />
+                    </div>
+                  </button>
+                  {isProfileDropdown && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white shadow-lg rounded-md border z-50">
+                      {user?.role === "donor" && (
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-center"
+                          onClick={() => setIsProfileDropdown(!isProfileDropdown)}
+                        >
+                          <Link className="flex items-center w-full" to="/dashboard">
+                            <LayoutDashboard className="mr-2" /> Dashboard
+                          </Link>
+                        </Button>
+                      )}
+                      <Button variant="ghost" className="w-full justify-center" onClick={() => setIsProfileDropdown(!isProfileDropdown)}>
+                        <Link className="flex items-center w-full" to="/logout">
+                          <LogOut className="mr-2" /> Logout
+                        </Link>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
 
             {/* Mobile Menu Button */}
