@@ -1,4 +1,15 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+
+import { auth, db } from "@/firebase/firebaseConfig";
+import { getCompatibleRecipients } from "@/lib/bloodCompatibility";
+import { getBloodRequestsOfType } from "@/lib/bloodRequest";
+
+import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -6,8 +17,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import Header from "@/components/Header";
+
 import {
   Heart,
   MapPin,
@@ -17,241 +27,284 @@ import {
   Calendar,
   Activity,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth, db } from "@/firebase/firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
-import { getCompatibleRecipients } from "@/lib/bloodCompatibility";
-import { getBloodRequestsOfType } from "@/lib/bloodRequest";
+
+import { toast } from "sonner";
+
+/* -------------------------------- utils -------------------------------- */
+
+const urgencyMap: Record<number, { label: string; variant: any }> = {
+  0: { label: "CRITICAL", variant: "destructive" },
+  1: { label: "URGENT", variant: "default" },
+  2: { label: "MODERATE", variant: "secondary" },
+  3: { label: "ROUTINE", variant: "outline" },
+};
+
+const getUrgency = (urgency?: number) =>
+  urgencyMap[urgency ?? 3] ?? urgencyMap[3];
+
+const timeAgo = (value: any) => {
+  if (!value) return "Just now";
+
+  const date =
+    value?.toDate?.() instanceof Date ? value.toDate() : new Date(value);
+
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+
+  const intervals = [
+    { label: "year", seconds: 31536000 },
+    { label: "month", seconds: 2592000 },
+    { label: "day", seconds: 86400 },
+    { label: "hour", seconds: 3600 },
+    { label: "minute", seconds: 60 },
+  ];
+
+  for (const i of intervals) {
+    const count = Math.floor(seconds / i.seconds);
+    if (count >= 1)
+      return `${count} ${i.label}${count > 1 ? "s" : ""} ago`;
+  }
+
+  return "Just now";
+};
+
+/* ------------------------------ component ------------------------------ */
 
 export default function Dashboard() {
   const [user, setUser] = useState<any>(null);
-  const [bloodRequests, setBloodRequests] = useState<any>(null);
+  const [bloodRequests, setBloodRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [acceptedRequests, setAcceptedRequests] = useState<Record<string, boolean>>({});
+  const [uploadedFiles, setUploadedFiles] = useState<Record<string, File | null>>({});
+
   const navigate = useNavigate();
+
+  /* --------------------------- handlers (FIXED) --------------------------- */
+
+  const handleAccept = (requestId: string) => {
+    setAcceptedRequests((prev) => ({
+      ...prev,
+      [requestId]: true,
+    }));
+
+    toast.success("Request accepted!", {
+      description: "Please upload your donation report.",
+    });
+  };
+
+  const handleFileUpload = (requestId: string, file: File | null) => {
+    if (!file) return;
+
+    setUploadedFiles((prev) => ({
+      ...prev,
+      [requestId]: file,
+    }));
+
+    toast.success("Report uploaded successfully", {
+      description: file.name,
+    });
+  };
+
+  /* ----------------------------- auth check ----------------------------- */
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         navigate("/login");
-      } else {
-        try {
-          const userDocRef = doc(db, "users", currentUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
+        return;
+      }
 
-          if (userDocSnap.exists()) {
-            const userData = userDocSnap.data();
-            console.log(userData);
-            
+      try {
+        const snap = await getDoc(doc(db, "users", currentUser.uid));
 
-            if (userData.role !== "donor") {
-              navigate("/login");
-              return;
-            }
-
-            const thisUser = { uid: currentUser.uid, ...userData };
-            setUser(thisUser);
-            
-          } else {
-            navigate("/login");
-          }
-        }catch (error) {
-          console.error(error);
+        if (!snap.exists() || snap.data().role !== "donor") {
           navigate("/login");
-        } finally {
-          setLoading(false);
+          return;
         }
+
+        setUser({ uid: currentUser.uid, ...snap.data() });
+      } catch (err) {
+        console.error(err);
+        navigate("/login");
+      } finally {
+        setLoading(false);
       }
     });
 
     return () => unsubscribe();
   }, [navigate]);
+
+  /* --------------------------- fetch requests --------------------------- */
+
   useEffect(() => {
-      const fetchRequest = async () => {
-        try {
-          if (user) {
-            const requests=await getBloodRequestsOfType(user.bloodType, 5);
-            setBloodRequests(requests);
-          }
-        } catch (error) {
-          console.error("Error fetching request:", error);
-        }
-      };
-  
-      fetchRequest();
-    }, [user]);
-  if (loading) {
-    return <div>Loading...</div>;
-  }
+    if (!user) return;
+
+    const loadRequests = async () => {
+      const data = await getBloodRequestsOfType(user.bloodType, 5);
+
+      data.sort((a: any, b: any) => {
+        if (a.urgency !== b.urgency) return a.urgency - b.urgency;
+        return b.createdAt.seconds - a.createdAt.seconds;
+      });
+
+      setBloodRequests(data);
+    };
+
+    loadRequests();
+  }, [user]);
+
+  if (loading) return <div className="p-8">Loading...</div>;
+
+  /* ------------------------------- UI ------------------------------- */
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Welcome Section */}
+      <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-brand-gray">
-            Welcome back, {user.firstName}!
-          </h1>
+          <h1 className="text-3xl font-bold">Welcome back, {user.firstName}!</h1>
           <p className="text-muted-foreground mt-2">
-            Your donations have helped save 3 lives this year.
+            Thank you for saving lives ❤️
           </p>
         </div>
 
-        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Donations
-              </CardTitle>
-              <Heart className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">12</div>
-              <p className="text-xs text-muted-foreground">+2 from last year</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Lives Saved</CardTitle>
-              <Activity className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">3</div>
-              <p className="text-xs text-muted-foreground">
-                Direct impact this year
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Next Eligible
-              </CardTitle>
-              <Calendar className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">45</div>
-              <p className="text-xs text-muted-foreground">days remaining</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Blood Type</CardTitle>
-              <User className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-primary">{user.bloodType}</div>
-              <p className="text-xs text-muted-foreground">{getCompatibleRecipients(user.bloodType).join(", ")}</p>
-            </CardContent>
-          </Card>
+          <StatCard title="Total Donations" value="12" icon={Heart} />
+          <StatCard title="Lives Saved" value="3" icon={Activity} />
+          <StatCard title="Next Eligible" value="45 days" icon={Calendar} />
+          <StatCard
+            title="Blood Type"
+            value={user.bloodType}
+            icon={User}
+            sub={getCompatibleRecipients(user.bloodType).join(", ")}
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Recent Requests */}
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Bell className="h-5 w-5" />
-                  Recent Blood Requests Near You
+                  <Bell className="h-5 w-5" /> Recent Requests
                 </CardTitle>
-                <CardDescription>
-                  Blood requests in your area that match your type
-                </CardDescription>
               </CardHeader>
+
               <CardContent className="space-y-4">
-                {bloodRequests&&bloodRequests.map((request)=>(
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h4 className="font-semibold">Urgent: O+ Blood Needed</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Patan Hospital - Emergency surgery
-                        </p>
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <MapPin className="h-3 w-3" />
-                            2.5 km away
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            Posted 2 hours ago
-                          </span>
+                {bloodRequests.map((request) => {
+                  const urgency = getUrgency(request.urgency);
+                  const isAccepted = acceptedRequests[request.id];
+                  const uploadedFile = uploadedFiles[request.id];
+
+                  return (
+                    <div key={request.id} className="border rounded-lg p-4 space-y-4">
+                      <div className="flex justify-between gap-4">
+                        <div>
+                          <h4 className="font-semibold">
+                            {urgency.label}: {request.bloodType} Blood Needed
+                          </h4>
+                          <p className="text-sm text-muted-foreground">
+                            {request.hospital}
+                          </p>
+
+                          <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                            <span className="flex gap-1">
+                              <MapPin className="h-3 w-3" /> {request.location}
+                            </span>
+                            <span className="flex gap-1">
+                              <Clock className="h-3 w-3" />{" "}
+                              {timeAgo(request.createdAt)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <Badge variant={urgency.variant} className="mb-2">
+                            {urgency.label}
+                          </Badge>
+
+                          {!isAccepted ? (
+                            <Button size="sm" onClick={() => handleAccept(request.id)}>
+                              Accept
+                            </Button>
+                          ) : (
+                            <Badge variant="secondary">Accepted</Badge>
+                          )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <Badge className="mb-2">URGENT</Badge>
-                        <Button size="sm">Respond</Button>
-                      </div>
+
+                      {isAccepted && (
+                        <Card className="bg-muted/40">
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm">
+                              Upload Donation Report
+                            </CardTitle>
+                            <CardDescription>
+                              PDF or image proof
+                            </CardDescription>
+                          </CardHeader>
+
+                          <CardContent>
+                            <input
+                              type="file"
+                              accept="application/pdf,image/*"
+                              onChange={(e) =>
+                                handleFileUpload(
+                                  request.id,
+                                  e.target.files?.[0] || null
+                                )
+                              }
+                            />
+
+                            {uploadedFile && (
+                              <p className="text-xs mt-2">
+                                Uploaded: <b>{uploadedFile.name}</b>
+                              </p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           </div>
 
-          {/* Profile & Quick Actions */}
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Your Profile</CardTitle>
-                <CardDescription>Donor information</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Blood Type</span>
-                  <Badge className="bg-primary">{user.bloodType}</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Location</span>
-                  <span className="text-sm text-muted-foreground">
-                    {user.address}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Last Donation</span>
-                  <span className="text-sm text-muted-foreground">
-                    Nov 15, 2024
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Status</span>
-                  <Badge variant="outline">Available</Badge>
-                </div>
-                <Button className="w-full" variant="outline">
-                  Edit Profile
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button className="w-full justify-start" variant="outline">
-                  <Heart className="h-4 w-4 mr-2" />
-                  Mark Available for Donation
-                </Button>
-                <Button className="w-full justify-start" variant="outline">
-                  <Bell className="h-4 w-4 mr-2" />
-                  Update Notification Settings
-                </Button>
-                <Button className="w-full justify-start" variant="outline">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  View Donation History
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Profile</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <ProfileRow label="Blood Type" value={user.bloodType} />
+              <ProfileRow label="Location" value={user.address} />
+              <ProfileRow label="Status" value="Available" />
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
   );
 }
+
+/* ----------------------------- helpers ----------------------------- */
+
+const StatCard = ({ title, value, icon: Icon, sub }: any) => (
+  <Card>
+    <CardHeader className="flex justify-between pb-2">
+      <CardTitle className="text-sm">{title}</CardTitle>
+      <Icon className="h-4 w-4 text-primary" />
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-bold">{value}</div>
+      {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+    </CardContent>
+  </Card>
+);
+
+const ProfileRow = ({ label, value }: any) => (
+  <div className="flex justify-between text-sm">
+    <span>{label}</span>
+    <span className="text-muted-foreground">{value}</span>
+  </div>
+);

@@ -6,6 +6,8 @@ import EmergencyAlert from "./EmergencyAlert";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "@/firebase/firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
+
+
 export default function Header() {
   const [user, setUser] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -51,12 +53,9 @@ export default function Header() {
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <Link to="/" className="flex items-center space-x-2">
-              <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-lg">
-                <Heart className="h-5 w-5 text-primary-foreground fill-current" />
-              </div>
-              <span className="text-xl font-bold text-brand-gray">
-                SahayogRed
-              </span>
+     <div class="logo_container">
+  <img src="/images/logo.jpeg" alt="Logo" class="logo" />
+</div>
             </Link>
 
             {/* Desktop Navigation */}
