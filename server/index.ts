@@ -1,6 +1,10 @@
 import express from "express";
 import cors from "cors";
 import { handleDemo } from "./routes/demo";
+import { handleTesting } from "./routes/testing";
+import router from "./routes/donation"; 
+import path from "path";
+
 
 export function createServer() {
   const app = express();
@@ -16,6 +20,16 @@ export function createServer() {
   });
 
   app.get("/api/demo", handleDemo);
+  app.get("/api/testing", handleTesting );
+
+    // Serve uploaded files
+  // app.use("/bloodDonationReport", express.static(path.join(__dirname, "../public/bloodDonationReport")));
+
+
+  // API routes
+  app.use("/api/donation", router);
+
+
 
   return app;
 }

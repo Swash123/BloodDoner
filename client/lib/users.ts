@@ -13,6 +13,8 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/firebase/firebaseConfig";
 import {getCompatibleDonors} from "@/lib/bloodCompatibility"
+import { formatDistanceToNow } from "date-fns";
+
 
 export async function createUser(
     id:string,
@@ -72,3 +74,52 @@ export async function searchDonnerforRequest(
     }
     return donors;
 }
+
+
+export async function getDonors() {
+  const q = query(
+    collection(db, "users"),
+    where("role", "==", "donor"),
+    limit(10)
+  );
+
+  const snap = await getDocs(q);
+
+  const donors = await Promise.all(
+    snap.docs.map(async (doc) => {
+      const donorId = doc.id;
+      const data = doc.data();
+
+      // ✅ Get all completed donations for this donor
+      const donationsQuery = query(
+        collection(db, "bloodAcceptances"),
+        where("donorId", "==", donorId),
+        where("completedAt", "!=", null),
+        orderBy("completedAt", "desc")
+      );
+
+      const donationsSnap = await getDocs(donationsQuery);
+
+      const totalDonations = donationsSnap.size;
+
+      const lastDonationTimestamp =
+        donationsSnap.docs[0]?.data()?.completedAt ?? null;
+
+      return {
+        id: donorId,
+        ...data,
+
+        totalDonations,
+
+        lastDonation: lastDonationTimestamp
+          ? formatDistanceToNow(lastDonationTimestamp.toDate(), {
+              addSuffix: true,
+            })
+          : "No Donation History",
+      };
+    })
+  );
+
+  return donors;
+}
+

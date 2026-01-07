@@ -30,7 +30,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./client/*"],
-      "@shared/*": ["./shared/*"]
+      "@shared/*": ["./shared/*"],
+      "@public/*": ["./public/*"],
+      "@server/*": ["./server/*"],
     }
   },
   "include": [

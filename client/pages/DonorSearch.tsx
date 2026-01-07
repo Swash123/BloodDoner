@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Header from "@/components/Header";
 import BloodCompatibilityChart from "@/components/BloodCompatibilityChart";
 import {
@@ -34,167 +34,106 @@ import {
   Award
 } from "lucide-react";
 
-interface Donor {
-  id: number;
-  name: string;
-  bloodType: string;
-  location: string;
-  distance: number;
-  lastDonation: string;
-  totalDonations: number;
-  verified: boolean;
-  rating: number;
-  availability: "available" | "recently_donated" | "unavailable";
-  joinedDate: string;
-  phone?: string;
-}
+import { getDonors } from "@/lib/users";
 
-const mockDonors: Donor[] = [
-  {
-    id: 1,
-    name: "Ram Bahadur Sharma",
-    bloodType: "O+",
-    location: "Thamel, Kathmandu",
-    distance: 2.1,
-    lastDonation: "3 months ago",
-    totalDonations: 15,
-    verified: true,
-    rating: 4.9,
-    availability: "available",
-    joinedDate: "2022-01-15",
-    phone: "+977 9841234567"
-  },
-  {
-    id: 2,
-    name: "Sita Gurung",
-    bloodType: "A+",
-    location: "Patan, Lalitpur",
-    distance: 3.8,
-    lastDonation: "4 months ago",
-    totalDonations: 8,
-    verified: true,
-    rating: 4.8,
-    availability: "available",
-    joinedDate: "2022-06-20"
-  },
-  {
-    id: 3,
-    name: "Krishna Thapa",
-    bloodType: "B+",
-    location: "Bhaktapur",
-    distance: 5.2,
-    lastDonation: "2 months ago",
-    totalDonations: 22,
-    verified: true,
-    rating: 5.0,
-    availability: "recently_donated",
-    joinedDate: "2021-03-10"
-  },
-  {
-    id: 4,
-    name: "Maya Shrestha",
-    bloodType: "AB+",
-    location: "Balaju, Kathmandu",
-    distance: 7.1,
-    lastDonation: "5 months ago",
-    totalDonations: 6,
-    verified: true,
-    rating: 4.7,
-    availability: "available",
-    joinedDate: "2023-02-28"
-  },
-  {
-    id: 5,
-    name: "Bikash Rai",
-    bloodType: "O-",
-    location: "Chabahil, Kathmandu",
-    distance: 4.3,
-    lastDonation: "1 month ago",
-    totalDonations: 31,
-    verified: true,
-    rating: 4.9,
-    availability: "recently_donated",
-    joinedDate: "2020-08-12"
-  },
-  {
-    id: 6,
-    name: "Anjana Magar",
-    bloodType: "A-",
-    location: "Koteshwor, Kathmandu",
-    distance: 6.8,
-    lastDonation: "6 months ago",
-    totalDonations: 12,
-    verified: true,
-    rating: 4.6,
-    availability: "available",
-    joinedDate: "2022-11-05"
-  }
-];
+
 
 const bloodTypes = ["All", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const locations = ["All Locations", "Kathmandu", "Lalitpur", "Bhaktapur", "Other"];
 const availabilityOptions = ["All", "available", "recently_donated", "unavailable"];
 
 export default function DonorSearch() {
-  const [donors] = useState<Donor[]>(mockDonors);
+  const [donors, setDonors] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [bloodTypeFilter, setBloodTypeFilter] = useState("All");
   const [locationFilter, setLocationFilter] = useState("All Locations");
   const [availabilityFilter, setAvailabilityFilter] = useState("All");
   const [sortBy, setSortBy] = useState("distance");
 
-  const filteredDonors = donors
-    .filter(donor => {
-      const matchesSearch = donor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           donor.location.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesBloodType = bloodTypeFilter === "All" || donor.bloodType === bloodTypeFilter;
-      const matchesLocation = locationFilter === "All Locations" || 
-                             donor.location.toLowerCase().includes(locationFilter.toLowerCase());
-      const matchesAvailability = availabilityFilter === "All" || donor.availability === availabilityFilter;
-      
-      return matchesSearch && matchesBloodType && matchesLocation && matchesAvailability;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case "distance":
-          return a.distance - b.distance;
-        case "rating":
-          return b.rating - a.rating;
-        case "donations":
-          return b.totalDonations - a.totalDonations;
-        case "recent":
-          return new Date(b.joinedDate).getTime() - new Date(a.joinedDate).getTime();
-        default:
-          return 0;
+  useEffect(() => {
+    const fetchDonors = async () => {
+      try {
+        const data = await getDonors();
+        setDonors(data);
+      } catch (err) {
+        console.error("Failed to fetch donors:", err);
       }
-    });
-
-  const getAvailabilityBadge = (availability: string) => {
-    switch (availability) {
-      case "available":
-        return <Badge className="bg-green-500">Available</Badge>;
-      case "recently_donated":
-        return <Badge className="bg-yellow-500">Recently Donated</Badge>;
-      case "unavailable":
-        return <Badge className="bg-red-500">Unavailable</Badge>;
-      default:
-        return <Badge variant="outline">Unknown</Badge>;
-    }
-  };
-
-  const getBloodTypeColor = (bloodType: string) => {
-    const colors: Record<string, string> = {
-      "O-": "bg-red-500",
-      "O+": "bg-red-400", 
-      "A-": "bg-blue-500",
-      "A+": "bg-blue-400",
-      "B-": "bg-green-500", 
-      "B+": "bg-green-400",
-      "AB-": "bg-purple-500",
-      "AB+": "bg-purple-400"
     };
-    return colors[bloodType] || "bg-gray-400";
+
+    fetchDonors();
+  }, []);
+
+ const filteredDonors = donors
+  .filter(donor => {
+    if (!donor) return false; // Skip null/undefined donors
+
+    const name = donor.name || ""; // fallback to empty string
+    const location = donor.location || "";
+    const bloodType = donor.bloodType || "";
+    const availability = donor.availability || "";
+
+    const matchesSearch =
+      name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      location.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesBloodType =
+      bloodTypeFilter === "All" || bloodType === bloodTypeFilter;
+
+    const matchesLocation =
+      locationFilter === "All Locations" ||
+      location.toLowerCase().includes(locationFilter.toLowerCase());
+
+    const matchesAvailability =
+      availabilityFilter === "All" || availability === availabilityFilter;
+
+    return matchesSearch && matchesBloodType && matchesLocation && matchesAvailability;
+  })
+  .sort((a, b) => {
+    if (!a || !b) return 0; // handle null donors
+
+    switch (sortBy) {
+      case "distance":
+        return (a.distance || 0) - (b.distance || 0);
+      case "rating":
+        return (b.rating || 0) - (a.rating || 0);
+      case "donations":
+        return (b.totalDonations || 0) - (a.totalDonations || 0);
+      case "recent":
+        return (
+          new Date(b.joinedDate || 0).getTime() - new Date(a.joinedDate || 0).getTime()
+        );
+      default:
+        return 0;
+    }
+  });
+
+const getAvailabilityBadge = (availability?: string) => {
+  switch (availability) {
+    case "available":
+      return <Badge className="bg-green-500">Available</Badge>;
+    case "recently_donated":
+      return <Badge className="bg-yellow-500">Recently Donated</Badge>;
+    case "unavailable":
+      return <Badge className="bg-red-500">Unavailable</Badge>;
+    default:
+      return <Badge variant="outline">Unknown</Badge>;
+  }
+};
+
+const getBloodTypeColor = (bloodType?: string) => {
+  const colors: Record<string, string> = {
+    "O-": "bg-red-500",
+    "O+": "bg-red-400",
+    "A-": "bg-blue-500",
+    "A+": "bg-blue-400",
+    "B-": "bg-green-500",
+    "B+": "bg-green-400",
+    "AB-": "bg-purple-500",
+    "AB+": "bg-purple-400",
   };
+  return bloodType ? colors[bloodType] || "bg-gray-400" : "bg-gray-400";
+};
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -336,7 +275,7 @@ export default function DonorSearch() {
                         </div>
                         <div>
                           <CardTitle className="text-lg flex items-center gap-2">
-                            {donor.name}
+                            {donor.firstName+' '+donor.lastName}
                             {donor.verified && (
                               <CheckCircle className="h-4 w-4 text-green-500" />
                             )}
@@ -345,23 +284,23 @@ export default function DonorSearch() {
                             <Star className="h-4 w-4 text-yellow-500 fill-current" />
                             <span className="text-sm font-medium">{donor.rating}</span>
                             <span className="text-sm text-muted-foreground">
-                              ({donor.totalDonations} donations)
+                              ({donor.totalDonations||0} donations)
                             </span>
                           </div>
                         </div>
                       </div>
-                      {getAvailabilityBadge(donor.availability)}
+                      {getAvailabilityBadge('available')}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div className="flex items-center gap-2">
                         <MapPin className="h-4 w-4 text-muted-foreground" />
-                        <span>{donor.location}</span>
+                        <span>{donor.address}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-muted-foreground" />
-                        <span>{donor.distance} km away</span>
+                        <span>{donor.address} </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Heart className="h-4 w-4 text-muted-foreground" />
@@ -369,7 +308,10 @@ export default function DonorSearch() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Calendar className="h-4 w-4 text-muted-foreground" />
-                        <span>Since {new Date(donor.joinedDate).getFullYear()}</span>
+                        <span>
+                          Since {donor.createdAt?.toDate ? donor.createdAt.toDate().getFullYear() : "N/A"}
+                        </span>
+
                       </div>
                     </div>
 

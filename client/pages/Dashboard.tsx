@@ -6,6 +6,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/firebase/firebaseConfig";
 import { getCompatibleRecipients } from "@/lib/bloodCompatibility";
 import { getBloodRequestsOfType } from "@/lib/bloodRequest";
+import { acceptBloodRequest } from "@/lib/bloodDonation";
 
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
@@ -81,29 +82,51 @@ export default function Dashboard() {
 
   /* --------------------------- handlers (FIXED) --------------------------- */
 
-  const handleAccept = (requestId: string) => {
-    setAcceptedRequests((prev) => ({
-      ...prev,
-      [requestId]: true,
-    }));
+  const handleAccept = async (requestId: string) => {
+    if (!user) return;
 
-    toast.success("Request accepted!", {
-      description: "Please upload your donation report.",
-    });
+    try {
+      await acceptBloodRequest(user.uid, requestId);
+
+      setAcceptedRequests((prev) => ({
+        ...prev,
+        [requestId]: true,
+      }));
+
+      toast.success("Request accepted!", {
+        description: "Please upload your donation report.",
+      });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to accept request");
+    }
   };
-
-  const handleFileUpload = (requestId: string, file: File | null) => {
+  const handleFileUpload = async (requestId: string, file: File | null) => {
     if (!file) return;
+    if (!user) return;
 
-    setUploadedFiles((prev) => ({
-      ...prev,
-      [requestId]: file,
-    }));
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
 
-    toast.success("Report uploaded successfully", {
-      description: file.name,
-    });
+      const res = await fetch(`/api/donation/complete/${requestId}`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+
+      setUploadedFiles((prev) => ({
+        ...prev,
+        [requestId]: file,
+      }));
+
+      toast.success("Donation completed successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to complete donation");
+    }
   };
+
 
   /* ----------------------------- auth check ----------------------------- */
 
@@ -233,15 +256,11 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      {isAccepted && (
+                      {/* {isAccepted && (
                         <Card className="bg-muted/40">
                           <CardHeader className="pb-2">
-                            <CardTitle className="text-sm">
-                              Upload Donation Report
-                            </CardTitle>
-                            <CardDescription>
-                              PDF or image proof
-                            </CardDescription>
+                            <CardTitle className="text-sm">Upload Donation Report</CardTitle>
+                            <CardDescription>PDF or image proof</CardDescription>
                           </CardHeader>
 
                           <CardContent>
@@ -249,10 +268,7 @@ export default function Dashboard() {
                               type="file"
                               accept="application/pdf,image/*"
                               onChange={(e) =>
-                                handleFileUpload(
-                                  request.id,
-                                  e.target.files?.[0] || null
-                                )
+                                handleFileUpload(request.id, e.target.files?.[0] || null)
                               }
                             />
 
@@ -263,7 +279,8 @@ export default function Dashboard() {
                             )}
                           </CardContent>
                         </Card>
-                      )}
+                      )} */}
+
                     </div>
                   );
                 })}
